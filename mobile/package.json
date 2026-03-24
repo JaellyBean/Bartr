@@ -17,6 +17,7 @@
     "@supabase/supabase-js": "^2.100.0",
     "expo": "~55.0.8",
     "expo-blur": "~55.0.10",
+    "expo-image-picker": "~55.0.13",
     "expo-linear-gradient": "~55.0.9",
     "expo-location": "~55.1.4",
     "expo-status-bar": "~55.0.4",
@@ -28,5 +29,9 @@
     "react-native-screens": "~4.23.0",
     "react-native-web": "^0.21.0"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@types/react": "~19.2.10",
+    "typescript": "~5.9.2"
+  }
 }
