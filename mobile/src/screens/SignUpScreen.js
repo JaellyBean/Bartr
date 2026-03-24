@@ -1,17 +1,40 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
+import { supabase } from '../utils/supabase';
 
 export default function SignUpScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  const handleSignUp = () => {
+  const handleSignUp = async () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    if (!email || !password) {
+      setErrorMessage('Please enter email and password.');
+      return;
+    }
+    
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      navigation.replace('Home');
-    }, 1000);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    setIsLoading(false);
+
+    if (error) {
+      setErrorMessage(error.message);
+      Alert.alert('Sign up Error', error.message);
+    } else {
+      if (data?.session) {
+        navigation.replace('Home');
+      } else {
+        setSuccessMessage('Please check your email to verify your account.');
+        Alert.alert('Success', 'Please check your email to verify your account.');
+      }
+    }
   };
 
   return (
@@ -61,6 +84,8 @@ export default function SignUpScreen({ navigation }) {
               <Text style={styles.buttonText}>Sign up</Text>
             )}
           </TouchableOpacity>
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+          {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
         </View>
 
         <View style={styles.footer}>
@@ -143,6 +168,18 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  errorText: {
+    color: '#ef4444',
+    marginTop: 12,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  successText: {
+    color: '#10b981',
+    marginTop: 12,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   footer: {
     flexDirection: 'row',
