@@ -1,17 +1,74 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
-
-const MOCK_CHATS = [
-  { id: '1', user: 'Alice M.', lastMessage: 'Hey! Are you still offering web design for plumbing?', time: '10:42 AM', unread: 1 },
-  { id: '2', user: 'Bob S.', lastMessage: 'The photography session was great, thanks!', time: 'Yesterday', unread: 0 },
-  { id: '3', user: 'Diana F.', lastMessage: 'I can fix that leaky sink for a logo.', time: 'Monday', unread: 0 },
-];
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { supabase } from '../utils/supabase';
 
 export default function InboxScreen({ navigation }) {
+  const [conversations, setConversations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  useEffect(() => {
+    fetchConversations();
+    
+    // Subscribe to messages changes
+    const channel = supabase.channel('public:messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        fetchConversations();
+      })
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchConversations = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setCurrentUserId(user.id);
+
+    const { data, error } = await supabase
+      .from('user_inbox')
+      .select('*')
+      .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
+      .order('last_message_time', { ascending: false });
+
+    if (!error && data) {
+      const formatted = data.map(conv => {
+        const isParticipant1 = conv.participant1_id === user.id;
+        const otherName = isParticipant1 ? conv.p2_name : conv.p1_name;
+        const otherId = isParticipant1 ? conv.participant2_id : conv.participant1_id;
+        
+        const unread = (conv.last_message_sender_id !== user.id && conv.last_message_read === false) ? 1 : 0;
+        
+        let timeString = '';
+        if (conv.last_message_time) {
+          const date = new Date(conv.last_message_time);
+          timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        return {
+          id: conv.conversation_id,
+          otherUserId: otherId,
+          user: otherName || 'Unknown User',
+          lastMessage: conv.last_message || 'No messages yet',
+          time: timeString,
+          unread: unread
+        };
+      });
+      setConversations(formatted);
+    }
+    setLoading(false);
+  };
+
   const renderItem = ({ item }) => (
     <TouchableOpacity 
       style={styles.chatRow}
-      onPress={() => navigation.navigate('Chat', { user: item.user })}
+      onPress={() => navigation.navigate('Chat', { 
+        conversationId: item.id, 
+        otherUserName: item.user, 
+        otherUserId: item.otherUserId 
+      })}
     >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>{item.user[0]}</Text>
@@ -38,12 +95,16 @@ export default function InboxScreen({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.title}>Messages</Text>
       </View>
-      <FlatList
-        data={MOCK_CHATS}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContainer}
-      />
+      {loading ? (
+        <ActivityIndicator style={{marginTop: 40}} color="#4f46e5" />
+      ) : (
+        <FlatList
+          data={conversations}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContainer}
+        />
+      )}
     </View>
   );
 }
