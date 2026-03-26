@@ -1,15 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Image } from 'react-native';
-import { supabase } from '../utils/supabase';
-import * as ImagePicker from 'expo-image-picker';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  Image,
+} from "react-native";
+import { supabase } from "../utils/supabase";
+import * as ImagePicker from "expo-image-picker";
 
 export default function ProfileScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [name, setName] = useState('');
-  const [bio, setBio] = useState('');
-  const [skillsOffered, setSkillsOffered] = useState('');
-  const [skillsNeeded, setSkillsNeeded] = useState('');
+  const [name, setName] = useState("");
+  const [bio, setBio] = useState("");
+  const [skillsOffered, setSkillsOffered] = useState("");
+  const [skillsNeeded, setSkillsNeeded] = useState("");
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [userId, setUserId] = useState(null);
 
@@ -20,14 +30,16 @@ export default function ProfileScreen({ navigation }) {
   async function getProfile() {
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
       if (user) {
         setUserId(user.id);
         const { data, error, status } = await supabase
-          .from('profiles')
+          .from("profiles")
           .select(`full_name, bio, skills, avatar_url`)
-          .eq('id', user.id)
+          .eq("id", user.id)
           .single();
 
         if (error && status !== 406) {
@@ -35,15 +47,17 @@ export default function ProfileScreen({ navigation }) {
         }
 
         if (data) {
-          setName(data.full_name || '');
-          setBio(data.bio || '');
-          setSkillsOffered(data.skills ? data.skills.join(', ') : '');
+          setName(data.full_name || "");
+          setBio(data.bio || "");
+          setSkillsOffered(data.skills ? data.skills.join(", ") : "");
+          // skills_needed optional, only shown if available in DB schema
+          setSkillsNeeded("");
           setAvatarUrl(data.avatar_url);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Error loading user data!');
-      console.log('Error loading user data:', error.message);
+      Alert.alert("Error", "Error loading user data!");
+      console.log("Error loading user data:", error.message);
     } finally {
       setLoading(false);
     }
@@ -52,25 +66,55 @@ export default function ProfileScreen({ navigation }) {
   async function handleSave() {
     try {
       setSaving(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
       const updates = {
         id: user.id,
         full_name: name,
         bio: bio,
-        skills: skillsOffered.split(',').map(s => s.trim()).filter(s => s !== ''),
+        skills: skillsOffered
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s !== ""),
+        skills_needed: skillsNeeded
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s !== ""),
         updated_at: new Date(),
       };
 
-      const { error } = await supabase
-        .from('profiles')
-        .update(updates)
-        .eq('id', user.id);
+      const upsertProfile = async (payload) => {
+        return await supabase
+          .from("profiles")
+          .upsert(payload, { onConflict: "id", returning: "minimal" });
+      };
+
+      let { error } = await upsertProfile(updates);
+
+      if (
+        error &&
+        error.message?.includes("could not find the 'skills_needed' column")
+      ) {
+        const fallback = { ...updates };
+        delete fallback.skills_needed;
+
+        const { error: fallbackError } = await upsertProfile(fallback);
+        if (fallbackError) throw fallbackError;
+
+        Alert.alert(
+          "Success",
+          "Profile updated successfully (no skills_needed in schema). ",
+        );
+        return;
+      }
 
       if (error) throw error;
-      Alert.alert('Success', 'Profile updated successfully!');
+
+      Alert.alert("Success", "Profile updated successfully!");
     } catch (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert("Error", error.message);
     } finally {
       setSaving(false);
     }
@@ -89,58 +133,60 @@ export default function ProfileScreen({ navigation }) {
         uploadAvatar(result.assets[0].uri);
       }
     } catch (e) {
-      Alert.alert('Error', 'Failed to pick image');
+      Alert.alert("Error", "Failed to pick image");
     }
   }
 
   async function uploadAvatar(uri) {
     try {
       setSaving(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      const fileExt = uri.split('.').pop();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const fileExt = uri.split(".").pop();
       const fileName = `${user.id}-${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
 
       const formData = new FormData();
-      formData.append('file', {
+      formData.append("file", {
         uri,
         name: fileName,
         type: `image/${fileExt}`,
       });
 
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
+        .from("avatars")
         .upload(filePath, formData);
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("avatars").getPublicUrl(filePath);
 
       const { error: updateError } = await supabase
-        .from('profiles')
+        .from("profiles")
         .update({ avatar_url: publicUrl })
-        .eq('id', user.id);
+        .eq("id", user.id);
 
       if (updateError) throw updateError;
-      
+
       setAvatarUrl(publicUrl);
-      Alert.alert('Success', 'Profile picture updated!');
+      Alert.alert("Success", "Profile picture updated!");
     } catch (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert("Error", error.message);
     } finally {
       setSaving(false);
     }
   }
 
   const getInitials = (fullName) => {
-    if (!fullName) return 'U';
+    if (!fullName) return "U";
     return fullName
-      .split(' ')
+      .split(" ")
       .map((n) => n[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .substring(0, 2);
   };
@@ -168,7 +214,7 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.editBadgeText}>Edit</Text>
           </View>
         </TouchableOpacity>
-        <Text style={styles.title}>{name || 'Your Profile'}</Text>
+        <Text style={styles.title}>{name || "Your Profile"}</Text>
       </View>
 
       <View style={styles.formContainer}>
@@ -210,8 +256,8 @@ export default function ProfileScreen({ navigation }) {
           placeholderTextColor="#6b7280"
         />
 
-        <TouchableOpacity 
-          style={[styles.saveButton, saving && styles.disabledButton]} 
+        <TouchableOpacity
+          style={[styles.saveButton, saving && styles.disabledButton]}
           onPress={handleSave}
           disabled={saving}
         >
@@ -222,11 +268,11 @@ export default function ProfileScreen({ navigation }) {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.logoutButton}
           onPress={async () => {
             await supabase.auth.signOut();
-            navigation.getParent()?.replace('Login');
+            navigation.getParent()?.replace("Login");
           }}
         >
           <Text style={styles.logoutButtonText}>Log Out</Text>
@@ -239,31 +285,31 @@ export default function ProfileScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#030712',
+    backgroundColor: "#030712",
   },
   centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   content: {
     padding: 24,
     paddingTop: 60,
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginVertical: 32,
   },
   avatarWrapper: {
-    position: 'relative',
+    position: "relative",
     marginBottom: 16,
   },
   avatarPlaceholder: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#4f46e5',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#4f46e5",
+    justifyContent: "center",
+    alignItems: "center",
   },
   avatarImage: {
     width: 100,
@@ -271,46 +317,46 @@ const styles = StyleSheet.create({
     borderRadius: 50,
   },
   editBadge: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     right: 0,
-    backgroundColor: '#10b981',
+    backgroundColor: "#10b981",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#030712',
+    borderColor: "#030712",
   },
   editBadgeText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   avatarText: {
     fontSize: 36,
-    color: '#fff',
-    fontWeight: 'bold',
+    color: "#fff",
+    fontWeight: "bold",
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
   },
   formContainer: {
-    width: '100%',
+    width: "100%",
   },
   label: {
-    color: '#d1d5db',
+    color: "#d1d5db",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#111827',
+    backgroundColor: "#111827",
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: "#374151",
     borderRadius: 12,
-    color: '#fff',
+    color: "#fff",
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
@@ -318,13 +364,13 @@ const styles = StyleSheet.create({
   },
   textArea: {
     height: 100,
-    textAlignVertical: 'top',
+    textAlignVertical: "top",
   },
   saveButton: {
-    backgroundColor: '#4f46e5',
+    backgroundColor: "#4f46e5",
     paddingVertical: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 10,
     marginBottom: 16,
   },
@@ -332,22 +378,22 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   saveButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   logoutButton: {
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: '#ef4444',
+    borderColor: "#ef4444",
     paddingVertical: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 40,
   },
   logoutButtonText: {
-    color: '#ef4444',
+    color: "#ef4444",
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
 });

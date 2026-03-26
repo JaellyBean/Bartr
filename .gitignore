@@ -41,3 +41,14 @@ next-env.d.ts
 # IDEs
 .vscode/
 .idea/
+
+# Local/copy instructions and agent files (do not commit)
+.agents/
+**/*.instructions.md
+**/*.prompt.md
+**/*.agent.md
+**/CLAUDE.md
+**/AGENTS.md
+
+# Optional local/or personal docs (if not intended for repo)
+/Bartr/Vercel.md
