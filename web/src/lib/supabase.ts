@@ -1,24 +1,41 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-let supabase: any
+let _supabase: any;
 
-if (supabaseUrl && supabaseKey) {
-  supabase = createClient(supabaseUrl, supabaseKey)
-  console.log('Supabase initialized (Web): URL Present, Key Present')
-} else {
-  // Mock supabase client to prevent build errors when env vars are missing
-  supabase = {
-    auth: {
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-      getSession: () => Promise.resolve({ data: { session: null } }),
-      signUp: () => Promise.reject(new Error('Supabase not configured')),
-    }
+const getSupabase = () => {
+  if (_supabase) return _supabase;
+
+  if (supabaseUrl && supabaseKey && supabaseUrl.startsWith("http")) {
+    _supabase = createClient(supabaseUrl, supabaseKey);
+    console.log("Supabase initialized (Web): URL Present, Key Present");
+  } else {
+    // Mock supabase client to prevent build errors when env vars are missing
+    _supabase = {
+      auth: {
+        onAuthStateChange: () => ({
+          data: { subscription: { unsubscribe: () => {} } },
+        }),
+        getSession: () => Promise.resolve({ data: { session: null } }),
+        signUp: () => Promise.reject(new Error("Supabase not configured")),
+        signIn: () => Promise.reject(new Error("Supabase not configured")),
+        signOut: () => Promise.reject(new Error("Supabase not configured")),
+      },
+    };
+    console.log("Supabase not initialized: Missing or invalid env vars");
   }
-  console.log('Supabase not initialized: Missing env vars')
-}
 
-export { supabase }
+  return _supabase;
+};
 
+export const supabase = new Proxy(
+  {},
+  {
+    get(target, prop) {
+      const client = getSupabase();
+      return client[prop];
+    },
+  },
+);
